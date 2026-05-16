@@ -1,0 +1,7 @@
+2026-05-15T14:49:38Z CommonTextBlock /Game/Blueprints/UI/Friends/WBP_InGameFriends.WBP_InGameFriends_C:WidgetTree.FriendCodeFeedbackText
+2026-05-15T14:49:38Z CommonTextBlock /Game/Blueprints/UI/Friends/WBP_InGameFriends.WBP_InGameFriends_C:WidgetTree.SessionNameText
+2026-05-15T14:49:38Z Overlay /Game/Blueprints/UI/Friends/WBP_InGameFriends.WBP_InGameFriends_C:WidgetTree.FriendCode
+2026-05-15T14:49:38Z Overlay /Game/Blueprints/UI/Friends/WBP_InGameFriends.WBP_InGameFriends_C:WidgetTree.FriendCodeFeedbackParent
+2026-05-15T14:49:38Z OverlaySlot /Game/Blueprints/UI/Friends/WBP_InGameFriends.WBP_InGameFriends_C:WidgetTree.FriendCodeFeedbackParent.OverlaySlot_0
+2026-05-15T14:49:38Z OverlaySlot /Game/Blueprints/UI/Friends/WBP_InGameFriends.WBP_InGameFriends_C:WidgetTree.FriendCodeFeedbackParent.OverlaySlot_2
+2026-05-15T14:49:38Z UWEEditableTextBoxWithValidation /Game/Blueprints/UI/Friends/WBP_InGameFriends.WBP_InGameFriends_C:WidgetTree.FriendCodeInputBox

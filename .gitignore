@@ -1,0 +1,28 @@
+# Build intermediates
+*.obj
+*.exp
+*.lib
+*.pdb
+*.exe
+
+# Local logs and crash dumps
+Logs/
+*.log
+*.dmp
+
+# Release staging directories
+release/_staging*/
+release/Subnautica2MorePlayers8/
+test_runs/
+
+# Local screenshots/captures from debugging sessions
+docs/*.png
+
+# Keep the current one-click release zip, ignore older unlocked duplicate.
+release/Subnautica2MorePlayers8-v0.2.9-oneclick.zip
+
+# Editor/system files
+.vs/
+.vscode/
+Thumbs.db
+Desktop.ini
