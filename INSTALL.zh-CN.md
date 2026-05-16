@@ -2,9 +2,11 @@
 
 当前版本：`0.3.6-64-production`
 
-当前配置目标是 `MaxPlayers=64`。你已反馈 8 人路径和第 5 人加入已经验证；64 人本身还需要继续实测。
+当前配置目标：`MaxPlayers=64`
 
-## 最简单安装
+8 人路径和第 5 人加入已经过实测反馈；64 人完整加入和世界同步仍未完成实机验证。
+
+## 安装
 
 普通玩家不需要安装 Visual Studio、CMake、Python、Git 或 SDK。
 
@@ -16,11 +18,9 @@
 
 ## 谁需要安装
 
-64 目标测试阶段建议：房主和所有参与测试的玩家都安装同一个 `Z:\Subnautica2MorePlayers8` 包。
+64 人目标测试阶段，建议房主和所有加入玩家都安装同一个版本。
 
-## 生产降噪
-
-默认关闭了大部分诊断开销：trace 文件、参数探测、unsafe reflection、Lua 循环扫描、native per-call logging。
+只让房主安装时，第 5 人已实测可以加入；但更高人数仍可能遇到客户端侧检查、session cache 或 SDK 返回值导致的拒绝/断连。
 
 ## 卸载
 
@@ -37,3 +37,5 @@ Uninstall-OneClick.cmd
 ```text
 Collect-MorePlayers8Logs.cmd
 ```
+
+然后把生成的日志包交给维护者分析。

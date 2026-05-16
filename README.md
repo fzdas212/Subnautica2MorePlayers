@@ -1,94 +1,168 @@
 # Subnautica2MorePlayers8
 
-UE4SS-based Subnautica 2 Steam mod that raises the known lobby/session/admission capacity paths away from the official 4-player limit.
+这是一个面向 Steam 版 **Subnautica 2** 的 UE4SS mod，用于把官方多人联机人数上限从 4 人提高到更高人数。
 
-Current status: `0.3.6-64-production` targets `MaxPlayers=64` with reduced runtime diagnostics. The earlier 8-player path, including player 5 joining, has been reported as verified by live testing. The 64-player target itself still requires real-client validation.
+当前版本：`0.3.6-64-production`
 
-## Supported Game Build
+当前目标人数：`64`
+
+请注意：这个项目不是破解补丁，不绕过 Steam/EOS 正版认证，也不替换官方多人联机系统。它只在官方联机链路上修改 lobby/session/admission 相关的人数上限参数。
+
+## 当前验证状态
+
+已验证：
+
+- UI 已可显示 `1/64`。
+- 8 人路径已测试过。
+- 第 5 名玩家加入成功，用户已实测反馈通过。
+
+未验证：
+
+- 64 人全部真实客户端同时加入。
+- 64 人状态下的长时间世界同步。
+- 64 人状态下的保存、重进、基地交互、载具交互和远距离同步稳定性。
+
+因此当前不能宣称“64 人完整生产验证通过”。它是以 64 为目标的生产低日志版本，仍需要继续多人实测。
+
+## 支持的游戏版本
+
+当前只针对下面这个 Steam 版游戏构建做了 native patch 版本保护：
 
 - Build label: `34_SHIPPING_RELEASEHOTFIXLIVE_CL-113109_B-13`
 - Build timestamp: `2026-05-10T04:15:22`
-- Shipping EXE SHA256: `E9D32E1693BEDBD4CB6BA6D7DB5FF9BB6EE34FA36AEF73F154B3CDC6B64D2CF4`
+- EXE SHA256: `E9D32E1693BEDBD4CB6BA6D7DB5FF9BB6EE34FA36AEF73F154B3CDC6B64D2CF4`
 
-Native patches are hash-gated. If the shipping EXE hash changes, native patches disable instead of applying unknown offsets.
+如果游戏更新导致 EXE hash 不匹配，native patch 会自动禁用，避免对未知版本硬打偏移。
 
-## What Is Patched
+## 最简单安装方法
 
-- `EOS_Lobby_CreateLobby`: `MaxLobbyMembers` is changed from the game's value to configured `MaxPlayers`.
-- `EOS_LobbyModification_SetMaxMembers`: `MaxMembers` is changed to configured `MaxPlayers`.
-- EOS copied lobby/session info and capacity-related metadata are corrected when they report a lower value.
-- Steam lobby member-limit calls are patched if this build routes through Steam lobby APIs.
-- Top lobby count source `/Script/Subnautica2.SN2InGameFriendScreenViewModel:AssemblePlayercountString` is patched to display the configured cap, so the lobby should show `1/64`.
-- Known-hash native `AGameSession::ApproveLogin -> Server full.` branch is patched in memory at runtime.
-- `%LOCALAPPDATA%\Subnautica2\Saved\Config\Windows\Game.ini` gets a reversible mod-owned `GameSession` override using the configured cap.
+普通玩家不需要安装 Visual Studio、CMake、Python、Git 或 SDK。
 
-The mod does not bypass Steam/EOS authentication and does not replace the official multiplayer stack.
+1. 完全退出 Subnautica 2。
+2. 下载或复制完整的 `Subnautica2MorePlayers8` 文件夹。
+3. 双击运行 `Install-OneClick.cmd`。
+4. 从 Steam 正常启动 Subnautica 2。
+5. 房主创建多人房间，顶部人数显示应为 `1/64`。
 
-## Production Profile
+如果游戏不在默认路径，使用 PowerShell 手动指定路径：
 
-- `LogLevel=Warn`
-- `EnableTraceFiles=false`
-- `EnableSafeParamProbe=false`
-- `HookProfile=ProductionLean`
-- `EnableUnsafeObjectReflection=false`
-- No broad widget sweeps
-- No Lua-side admission/session polling loops
-- `NativePatchLogAllCalls=false`
+```powershell
+.\Install-OneClick.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"
+```
 
-Essential startup/error logging remains available in `MorePlayers8.log` and `native_eos_patch.log`.
+## 谁需要安装
 
-## Simplest Install
+建议房主和所有加入的玩家都安装同一个版本。
 
-1. Exit Subnautica 2 completely.
-2. Open the full `Subnautica2MorePlayers8` folder.
-3. Double-click `Install-OneClick.cmd`.
-4. Start Subnautica 2 from Steam.
-5. Host creates a multiplayer lobby and checks whether the top player count shows `1/64`.
+原因：
 
-Normal players do not need Visual Studio, CMake, Python, Git, or any SDK.
+- 房主需要修改真实 lobby/session capacity。
+- 加入方也可能经过本地 UI、join validation、session cache 或 SDK 返回值检查。
+- 只让房主安装时，第 5 人已实测可以进，但更高人数仍可能在客户端侧遇到拒绝或断连。
 
-## Who Must Install It
+所以 64 人目标测试阶段，统一安装是最稳妥的方案。
 
-For 64-target testing, install the same package on the host and every joining client.
+## 卸载方法
 
-## Build
+完全退出游戏后双击：
+
+```text
+Uninstall-OneClick.cmd
+```
+
+或手动运行：
+
+```powershell
+.\uninstall.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"
+```
+
+卸载脚本会删除 mod，并恢复安装时备份过的文件。
+
+## 构建方法
+
+开发者重新构建：
 
 ```powershell
 cd C:\tmp\Subnautica2MorePlayers8
 .\build.ps1
 ```
 
-## Install
+安装到本机游戏：
 
 ```powershell
-cd C:\tmp\Subnautica2MorePlayers8
 .\install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"
 ```
 
-Installed mod path:
-
-```text
-D:\SteamLibrary\steamapps\common\Subnautica2\Subnautica2\Binaries\Win64\ue4ss\Mods\Subnautica2MorePlayers8
-```
-
-Current uncompressed player package:
-
-```text
-Z:\Subnautica2MorePlayers8
-```
-
-## Uninstall
+验证安装：
 
 ```powershell
-cd C:\tmp\Subnautica2MorePlayers8
-.\uninstall.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"
+.\tools\verify_install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"
 ```
 
-Or double-click `Uninstall-OneClick.cmd`.
+## 当前修改内容
 
-## Validation Boundary
+主要 patch 点：
 
-- 8-player path and player 5 joining: reported verified by live testing.
-- 64-player capacity and world synchronization: not verified yet.
+- `EOS_Lobby_CreateLobby`：把 `MaxLobbyMembers` 改为配置中的 `MaxPlayers`。
+- `EOS_LobbyModification_SetMaxMembers`：把 `MaxMembers` 改为配置中的 `MaxPlayers`。
+- EOS copied lobby/session info 中偏低的人数上限会被修正。
+- 如果当前构建走 Steam lobby API，会尝试修正 Steam lobby member limit。
+- `/Script/Subnautica2.SN2InGameFriendScreenViewModel:AssemblePlayercountString`：修正顶部好友/房间人数显示来源，使其显示 `1/64`。
+- 已知 hash 下的 `AGameSession::ApproveLogin -> Server full.` native 分支会在运行时被 patch。
+- `%LOCALAPPDATA%\Subnautica2\Saved\Config\Windows\Game.ini` 会写入可回滚的 mod-owned `GameSession` 覆盖项。
 
-UI showing `1/64` is necessary but not sufficient. Real pass requires players joining, spawning, moving, interacting, save/rejoin, and world replication.
+## 生产低日志配置
+
+当前默认是降噪配置，减少性能开销：
+
+- `LogLevel=Warn`
+- `EnableTraceFiles=false`
+- `EnableSafeParamProbe=false`
+- `HookProfile=ProductionLean`
+- `EnableUnsafeObjectReflection=false`
+- `NativePatchLogAllCalls=false`
+
+基础错误日志仍会保留，方便排查加入失败。
+
+## 加入失败时如何收集日志
+
+如果第 5 人或更高人数加入失败，房主和失败玩家都应立刻运行：
+
+```text
+Collect-MorePlayers8Logs.cmd
+```
+
+重点需要检查：
+
+- 房主日志
+- 失败玩家日志
+- `MorePlayers8.log`
+- `native_eos_patch.log`
+- UE4SS 日志
+- 游戏崩溃或断连时间点附近的日志
+
+## 端口转发 / LAN / 公网
+
+当前 mod 复用官方 Steam/EOS 联机机制。
+
+- 不默认开启自定义公网监听端口。
+- 不需要额外 LAN server。
+- 不提供绕过认证的直连模式。
+- 公网联机仍优先使用官方好友、邀请或房间机制。
+
+如果官方联机机制本身因为 NAT、防火墙或平台服务失败而无法连接，本 mod 不会单独解决那类网络问题。
+
+## 重要说明
+
+UI 显示 `1/64` 只是必要条件，不代表 64 人完整成功。
+
+真正通过标准应包括：
+
+- 多名玩家实际加入。
+- 第 5 人以后不再被 full / capacity / disconnect 拒绝。
+- 玩家能生成、移动、交互。
+- 世界状态能同步。
+- 保存和重进正常。
+- 长时间游玩不出现人数相关崩溃。
+
+目前已知最可靠的结论是：8 人路径和第 5 人加入已通过实测；64 人完整压力测试还没有完成。
