@@ -452,3 +452,22 @@ Package state after this validation:
 - Desktop zip:
   `C:\Users\fzc\Desktop\Subnautica2MorePlayers8-v0.3.9-64-server-console.zip`
 - Desktop zip hash is reported outside this file to avoid changing the archive content when the hash line changes.
+
+## 2026-05-18 Handoff Update - Join CMD UNC fix
+
+User reported that `Join-ExperimentalServer.cmd` failed when launched from a UNC share:
+
+```text
+UNC 路径不受支持。默认值设为 Windows 目录。
+无法将参数绑定到参数“Address”，因为该参数为空字符串。
+```
+
+Fix applied:
+
+- `Join-ExperimentalServer.cmd` now runs `pushd "%~dp0"` before invoking PowerShell.
+- This lets Windows map UNC paths to a temporary drive letter for the command session.
+- The prompted IP address is no longer expanded inside the same parenthesized `if` block that calls `set /p`, so it is not passed as an empty string.
+- Supported usage:
+  - double-click and enter the IP when prompted;
+  - `Join-ExperimentalServer.cmd 192.168.1.3`;
+  - `Join-ExperimentalServer.cmd -Address 192.168.1.3 -Port 7777`.

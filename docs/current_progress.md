@@ -1093,3 +1093,27 @@ Completed:
 - Created desktop zip:
   `C:\Users\fzc\Desktop\Subnautica2MorePlayers8-v0.3.9-64-server-console.zip`
 - Desktop zip hash is intentionally reported in the final assistant response instead of embedded here, because embedding the hash changes the archive content.
+
+## 2026-05-18 - Direct-connect CMD UNC/path fix
+
+User-side failure:
+
+```text
+UNC 路径不受支持。默认值设为 Windows 目录。
+Join-ExperimentalServer.ps1 : 无法将参数绑定到参数“Address”，因为该参数为空字符串。
+```
+
+Root cause:
+
+- `Join-ExperimentalServer.cmd` was run from a UNC share path.
+- `cmd.exe` cannot use a UNC path as the current working directory.
+- The batch file also used `%MP8_ADDRESS%` inside a parenthesized `if (...)` block immediately after `set /p`; without delayed expansion, `%MP8_ADDRESS%` was expanded before the prompt ran, so PowerShell received `-Address ""`.
+
+Fix:
+
+- `Join-ExperimentalServer.cmd` now uses `pushd "%~dp0"` so Windows maps the UNC share to a temporary drive for the script lifetime.
+- The batch flow no longer uses the prompt variable inside the same parenthesized block.
+- Running with no arguments prompts for the host address.
+- Running with a bare address now works:
+  `Join-ExperimentalServer.cmd 192.168.1.3`
+- Running with explicit PowerShell-style options still works when the first argument starts with `-`.
