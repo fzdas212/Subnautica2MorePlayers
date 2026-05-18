@@ -471,3 +471,34 @@ Fix applied:
   - double-click and enter the IP when prompted;
   - `Join-ExperimentalServer.cmd 192.168.1.3`;
   - `Join-ExperimentalServer.cmd -Address 192.168.1.3 -Port 7777`.
+
+## 2026-05-18 Handoff Update - Listen host UI count
+
+User verified a remote client can join the graphical CMD/IP listen host. Host log shows:
+
+- `NotifyAcceptedConnection`
+- `Login request`
+- `Join request`
+- `Join succeeded`
+- second `BP_SN2PlayerState` added to the team view model
+
+Remaining issue:
+
+- Friend/player UI still displayed `0/64`.
+
+Cause:
+
+- The IP listen-host route does not create/populate the normal default Sonar/EOS session object used by `SN2InGameFriendScreenViewModel:AssemblePlayercountString`.
+- The previous patch only fixed the denominator; it preserved the empty-session numerator.
+
+Fix:
+
+- Lua version is now `0.3.10-64-listen-ui-count`.
+- Player count text rewriting now uses live world count from `GameState.PlayerArray` or `PlayerState` instances when that count is higher than the session-derived number.
+
+Next validation:
+
+- Build/install.
+- Restart host.
+- Have one remote client join.
+- Open the player/friend list and confirm it shows `2/64`.

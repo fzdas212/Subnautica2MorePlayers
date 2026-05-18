@@ -1117,3 +1117,46 @@ Fix:
 - Running with a bare address now works:
   `Join-ExperimentalServer.cmd 192.168.1.3`
 - Running with explicit PowerShell-style options still works when the first argument starts with `-`.
+
+## 2026-05-18 - IP listen host remote join succeeded; UI count source fixed
+
+New user report:
+
+- Remote client can join the host game through the server-console/IP route.
+- The visible player count still shows `0/64`.
+
+Host-side log evidence:
+
+- `NotifyAcceptingConnection accepted from: 192.168.1.16:55670`
+- `Login request: ?Name=...`
+- `Join request: /Game/Maps/L_ClientLobby?...`
+- `Join succeeded: 十年老兵`
+- A second `BP_SN2PlayerState` was created and added to `USN2TeamViewModel`.
+
+Interpretation:
+
+- IP/Port listen host admission works for at least one remote client.
+- The `0/64` UI is not proof of no players; it is caused by this route not having a normal default EOS/Sonar session/lobby object.
+- The existing UI patch only changed the denominator from `4` to `64`; it preserved the numerator reported by the empty session source.
+
+Fix implemented:
+
+- Lua version bumped to `0.3.10-64-listen-ui-count`.
+- `rewrite_player_count_text()` now asks `detect_actual_player_count()` for a live count.
+- Detection priority:
+  - `SN2GameState.PlayerArray`
+  - `GameState.PlayerArray`
+  - `GameStateBase.PlayerArray`
+  - fallback `FindAllOf(BP_SN2PlayerState_C)`
+  - fallback `FindAllOf(SN2PlayerState)`
+  - fallback `FindAllOf(PlayerState)`
+- If the actual count is higher than the session-derived numerator, the UI text uses the actual count.
+- Expected result after host restart and client join:
+  `2/64` instead of `0/64` for host + one remote player.
+
+Still to validate:
+
+- Restart host with the rebuilt mod.
+- One remote client joins.
+- Open the friend/player list and verify it shows `2/64`.
+- Test disconnect/rejoin updates.

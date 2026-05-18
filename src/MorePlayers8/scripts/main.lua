@@ -1,5 +1,5 @@
 local MOD_NAME = "Subnautica2MorePlayers8"
-local MOD_VERSION = "0.3.9-64-official-smoketest-server-console"
+local MOD_VERSION = "0.3.10-64-listen-ui-count"
 
 local function script_dir()
     local src = debug.getinfo(1, "S").source
@@ -171,6 +171,8 @@ local playercountPatchLogged = 0
 local lowNoiseHookSeen = {}
 local lastPlayercountBefore = nil
 local lastPlayercountAfter = nil
+local lastActualPlayerCount = nil
+local lastActualPlayerCountLog = 0
 local serverApiAttempts = 0
 
 local function retain_callback(label, fn)
@@ -245,6 +247,101 @@ local function text_param_to_string(param)
     return nil
 end
 
+local function count_array_like(value)
+    if value == nil then return nil end
+
+    local n = safe(function() return #value end, nil)
+    if type(n) == "number" and n >= 0 and n <= config.MaxPlayers then
+        return n
+    end
+
+    for _, methodName in ipairs({ "Num", "Length", "Count", "size" }) do
+        n = safe(function() return value[methodName](value) end, nil)
+        if type(n) == "number" and n >= 0 and n <= config.MaxPlayers then
+            return n
+        end
+    end
+
+    local count = 0
+    local ok = safe(function()
+        for _, entry in pairs(value) do
+            if entry ~= nil then count = count + 1 end
+            if count > config.MaxPlayers then break end
+        end
+        return true
+    end, false)
+    if ok and count >= 0 and count <= config.MaxPlayers then
+        return count
+    end
+
+    return nil
+end
+
+local function count_playerstates_by_class(className)
+    local objects = safe(function() return FindAllOf(className) end, nil)
+    if objects == nil then return nil end
+
+    local count = 0
+    local seen = {}
+    safe(function()
+        for _, obj in pairs(objects) do
+            if obj ~= nil and not seen[obj] then
+                seen[obj] = true
+                count = count + 1
+                if count > config.MaxPlayers then break end
+            end
+        end
+    end, nil)
+
+    if count >= 0 and count <= config.MaxPlayers then
+        return count
+    end
+    return nil
+end
+
+local function detect_actual_player_count(reason)
+    local best = nil
+    local source = nil
+
+    for _, className in ipairs({ "SN2GameState", "GameState", "GameStateBase" }) do
+        local gameState = safe(function() return FindFirstOf(className) end, nil)
+        if gameState ~= nil then
+            local arr = safe(function() return gameState.PlayerArray end, nil)
+            local count = count_array_like(arr)
+            if count ~= nil then
+                best = count
+                source = className .. ".PlayerArray"
+                break
+            end
+        end
+    end
+
+    if best == nil then
+        for _, className in ipairs({ "BP_SN2PlayerState_C", "SN2PlayerState", "PlayerState" }) do
+            local count = count_playerstates_by_class(className)
+            if count ~= nil and count > 0 then
+                if best == nil or count > best then
+                    best = count
+                    source = "FindAllOf(" .. className .. ")"
+                end
+            end
+        end
+    end
+
+    if best ~= nil and best >= 0 and best <= config.MaxPlayers then
+        local now = os.time()
+        if best ~= lastActualPlayerCount or (now - lastActualPlayerCountLog) >= 30 then
+            lastActualPlayerCount = best
+            lastActualPlayerCountLog = now
+            append(CAPACITY_TRACE_FILE, string.format("ACTUAL_PLAYER_COUNT reason=%s count=%d source=%s", tostring(reason), best, tostring(source)))
+            log("Info", string.format("Detected actual player count %d via %s for %s", best, tostring(source), tostring(reason)))
+        end
+        return best, source
+    end
+
+    return nil, nil
+end
+
 local function rewrite_player_count_text(text)
     if type(text) ~= "string" then return nil end
     if count_char(text, "/") ~= 1 then return nil end
@@ -258,6 +355,11 @@ local function rewrite_player_count_text(text)
     if current == nil or current < 0 or current > config.MaxPlayers then return nil end
     if denominator == nil or denominator < 1 or denominator >= config.MaxPlayers then return nil end
     if string.find(lower(text), "http", 1, true) ~= nil then return nil end
+
+    local actual = detect_actual_player_count("rewrite_player_count_text")
+    if actual ~= nil and actual > current and actual <= config.MaxPlayers then
+        current = actual
+    end
 
     return string.format("%s%d/%d%s", prefix, current, config.MaxPlayers, suffix)
 end

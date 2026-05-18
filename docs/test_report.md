@@ -347,3 +347,36 @@ Client helper update:
 - The client smoketest executes:
   `open <host>:7777`.
 - Direct shipping-EXE launch remains available only through `-UseShippingExe` for debugging.
+
+## IP Listen Host Remote Join - 2026-05-18
+
+User-side result:
+
+- A remote client joined the host through the IP/Port server-console route.
+- The visible room count stayed `0/64`.
+
+Host log evidence:
+
+- `NotifyAcceptingConnection accepted from: 192.168.1.16:55670`
+- `NotifyAcceptedConnection`
+- `Login request`
+- `Join request`
+- `Join succeeded: 十年老兵`
+- A second `BP_SN2PlayerState` was created and added to the team view model.
+
+Verdict:
+
+- One remote IP/Port client join is verified.
+- The `0/64` display is a UI/session-source problem, not an admission failure.
+- The IP listen-host path does not appear to populate the default Sonar/EOS session used by `SN2InGameFriendScreenViewModel:AssemblePlayercountString`.
+
+Patch added:
+
+- Lua version `0.3.10-64-listen-ui-count`.
+- Player-count UI now prefers live world player count from `PlayerArray` / `PlayerState` when it is higher than the session-derived numerator.
+
+Pending:
+
+- Rebuild/install/restart host.
+- Verify host + one remote client shows `2/64`.
+- Verify count changes on disconnect/rejoin.
