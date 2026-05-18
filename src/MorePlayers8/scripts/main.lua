@@ -1,5 +1,5 @@
 local MOD_NAME = "Subnautica2MorePlayers8"
-local MOD_VERSION = "0.3.6-64-production"
+local MOD_VERSION = "0.3.9-64-official-smoketest-server-console"
 
 local function script_dir()
     local src = debug.getinfo(1, "S").source
@@ -140,7 +140,26 @@ local function load_config()
         DisableOnUnknownGameHash = json_bool(text, "DisableOnUnknownGameHash", false),
         KnownGameExeSha256 = json_string(text, "KnownGameExeSha256", ""),
         EnableNativeEOSCapacityPatch = json_bool(text, "EnableNativeEOSCapacityPatch", false),
-        NativePatchRequireKnownHash = json_bool(text, "NativePatchRequireKnownHash", true)
+        NativePatchRequireKnownHash = json_bool(text, "NativePatchRequireKnownHash", true),
+        ServerMode = json_string(text, "ServerMode", "Client"),
+        EnableServerAutomation = json_bool(text, "EnableServerAutomation", false),
+        EnableServerApiAutomation = json_bool(text, "EnableServerApiAutomation", false),
+        ServerApiMode = json_string(text, "ServerApiMode", "UiLaunchGame"),
+        EnableRawHostViewModelApi = json_bool(text, "EnableRawHostViewModelApi", false),
+        ServerApiMaxAttempts = json_int(text, "ServerApiMaxAttempts", 1),
+        ServerApiRetryIntervalMs = json_int(text, "ServerApiRetryIntervalMs", 15000),
+        ServerCheckpointName = json_string(text, "ServerCheckpointName", ""),
+        ServerSaveSlotName = json_string(text, "ServerSaveSlotName", ""),
+        ServerAllowNewGameFallback = json_bool(text, "ServerAllowNewGameFallback", false),
+        EnableUnsafeTravelAutomation = json_bool(text, "EnableUnsafeTravelAutomation", false),
+        ServerListenPort = json_int(text, "ServerListenPort", 7777),
+        ServerTravelUrl = json_string(text, "ServerTravelUrl", ""),
+        ServerAutoHostDelayMs = json_int(text, "ServerAutoHostDelayMs", 20000),
+        EnableDirectConnectAutomation = json_bool(text, "EnableDirectConnectAutomation", false),
+        DirectConnectAddress = json_string(text, "DirectConnectAddress", ""),
+        DirectConnectDelayMs = json_int(text, "DirectConnectDelayMs", 15000),
+        PreferEOSLobby = json_bool(text, "PreferEOSLobby", true),
+        EnableIpPortFallback = json_bool(text, "EnableIpPortFallback", false)
     }
 end
 
@@ -152,6 +171,7 @@ local playercountPatchLogged = 0
 local lowNoiseHookSeen = {}
 local lastPlayercountBefore = nil
 local lastPlayercountAfter = nil
+local serverApiAttempts = 0
 
 local function retain_callback(label, fn)
     retainedCallbacks[#retainedCallbacks + 1] = { label = label, fn = fn }
@@ -1766,6 +1786,349 @@ local function load_native_patch()
     log("Info", "Native EOS capacity patch entry called; see Logs\\native_eos_patch.log for install status")
 end
 
+local function exec_console_command(command, reason)
+    if command == nil or command == "" then
+        log("Warn", "Skipped empty console command for " .. tostring(reason))
+        return false
+    end
+
+    append(CAPACITY_TRACE_FILE, string.format("SERVER_AUTOMATION_COMMAND reason=%s command=%s", tostring(reason), tostring(command)))
+
+    local engine = safe(function() return FindFirstOf("Engine") end, nil)
+    if engine ~= nil then
+        local ok = safe(function()
+            return engine:ProcessConsoleExec(command, nil, engine)
+        end, nil)
+        log(ok and "Info" or "Warn", string.format("Console command via Engine reason=%s command=%s result=%s", tostring(reason), tostring(command), tostring(ok)))
+        if ok == true then return true end
+    end
+
+    local pc = safe(function() return FindFirstOf("PlayerController") end, nil)
+    if pc ~= nil then
+        local ok = safe(function()
+            return pc:ProcessConsoleExec(command, nil, pc)
+        end, nil)
+        log(ok and "Info" or "Warn", string.format("Console command via PlayerController reason=%s command=%s result=%s", tostring(reason), tostring(command), tostring(ok)))
+        if ok == true then return true end
+    end
+
+    log("Warn", "Console command was not accepted by known executors: " .. tostring(command))
+    return false
+end
+
+local function try_call_method(obj, methodName, reason)
+    if obj == nil or type(obj) ~= "userdata" then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_CALL reason=%s method=%s result=no-object", tostring(reason), tostring(methodName)))
+        return false
+    end
+
+    local ok, result = pcall(function()
+        return obj[methodName](obj)
+    end)
+    append(CAPACITY_TRACE_FILE, string.format("SERVER_API_CALL reason=%s method=%s object=%s result=%s return=%s",
+        tostring(reason), tostring(methodName), object_name(obj), tostring(ok), tostring(result)))
+    log(ok and "Info" or "Warn", string.format("Server API call %s via %s result=%s return=%s",
+        tostring(methodName), tostring(reason), tostring(ok), tostring(result)))
+    return ok == true
+end
+
+local function try_call_method_with_one_arg(obj, methodName, arg, argLabel, reason)
+    if obj == nil or type(obj) ~= "userdata" then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_CALL reason=%s method=%s arg=%s result=no-object", tostring(reason), tostring(methodName), tostring(argLabel)))
+        return false
+    end
+
+    local ok, result = pcall(function()
+        return obj[methodName](obj, arg)
+    end)
+    append(CAPACITY_TRACE_FILE, string.format("SERVER_API_CALL reason=%s method=%s arg=%s object=%s result=%s return=%s",
+        tostring(reason), tostring(methodName), tostring(argLabel), object_name(obj), tostring(ok), tostring(result)))
+    log(ok and "Info" or "Warn", string.format("Server API call %s via %s arg=%s result=%s return=%s",
+        tostring(methodName), tostring(reason), tostring(argLabel), tostring(ok), tostring(result)))
+    return ok == true
+end
+
+local function find_first_any_class(classes)
+    for _, className in ipairs(classes) do
+        local obj = safe(function() return FindFirstOf(className) end, nil)
+        if obj ~= nil then
+            return obj, className
+        end
+    end
+    return nil, nil
+end
+
+local function collect_class_candidates(className)
+    local candidates = {}
+    local seen = {}
+
+    local all = safe(function() return FindAllOf(className) end, nil)
+    if all ~= nil then
+        for _, obj in pairs(all) do
+            if obj ~= nil and not seen[obj] then
+                seen[obj] = true
+                candidates[#candidates + 1] = obj
+            end
+        end
+    end
+
+    local first = safe(function() return FindFirstOf(className) end, nil)
+    if first ~= nil and not seen[first] then
+        candidates[#candidates + 1] = first
+    end
+
+    return candidates
+end
+
+local function try_call_method_on_class_candidates(className, methodName, arg, argLabel, reason)
+    local candidates = collect_class_candidates(className)
+    if #candidates == 0 then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_CANDIDATES_MISSING reason=%s class=%s method=%s", tostring(reason), tostring(className), tostring(methodName)))
+        return false
+    end
+
+    local anyCallable = false
+    for index, obj in ipairs(candidates) do
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_CANDIDATE reason=%s class=%s method=%s index=%d object=%s", tostring(reason), tostring(className), tostring(methodName), index, object_name(obj)))
+        local ok
+        if argLabel ~= nil then
+            ok = try_call_method_with_one_arg(obj, methodName, arg, argLabel, reason .. " candidate#" .. tostring(index))
+        else
+            ok = try_call_method(obj, methodName, reason .. " candidate#" .. tostring(index))
+        end
+        if ok then
+            anyCallable = true
+            break
+        end
+    end
+
+    return anyCallable
+end
+
+local function try_ui_launch_game_once(reason)
+    local obj, className = find_first_any_class({
+        "WBP_LoadGamePanel1_C",
+        "WBP_LoadGamePanel_C"
+    })
+
+    if obj == nil then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_UI_LAUNCH_SKIPPED reason=%s missing=WBP_LoadGamePanel", tostring(reason)))
+        log("Warn", "Server API UI launch skipped: multiplayer load-game panel was not found. Open the multiplayer save selection screen, select a save, then press Play manually.")
+        return false
+    end
+
+    append(CAPACITY_TRACE_FILE, string.format("SERVER_API_UI_LAUNCH_OBJECT reason=%s class=%s object=%s", tostring(reason), tostring(className), object_name(obj)))
+    local checkpointName = tostring(config.ServerCheckpointName or "")
+    return try_call_method_with_one_arg(obj, "LaunchGame", checkpointName, "CheckpointName=" .. checkpointName, "ui-launch-game " .. tostring(reason))
+end
+
+local function try_server_lobby_load_game_once(reason)
+    local slotName = tostring(config.ServerSaveSlotName or "")
+    if slotName == "" then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_LOADGAME_SKIPPED reason=%s missing=ServerSaveSlotName", tostring(reason)))
+        log("Warn", "ServerLobbyLoadGame skipped: ServerSaveSlotName is empty. The console launcher should auto-detect a save slot, or pass -ServerSaveSlotName savegame_N.")
+        return false
+    end
+
+    local loaded = try_call_method_on_class_candidates(
+        "UWEServerLobbyComponent",
+        "LoadGame",
+        slotName,
+        "SaveSlotName=" .. slotName,
+        "server-lobby-load-game " .. tostring(reason))
+    if loaded then
+        return true
+    end
+
+    append(CAPACITY_TRACE_FILE, string.format("SERVER_API_LOADGAME_FALLBACK reason=%s method=ContinueFromLatestSave slot=%s", tostring(reason), slotName))
+    local continued = try_call_method_on_class_candidates(
+        "UWEServerLobbyComponent",
+        "ContinueFromLatestSave",
+        nil,
+        nil,
+        "server-lobby-continue-latest " .. tostring(reason))
+    if continued then
+        return true
+    end
+
+    log("Warn", "ServerLobbyLoadGame did not find a callable UWEServerLobbyComponent yet.")
+    return false
+end
+
+local function try_server_lobby_new_game_once(reason)
+    if not config.ServerAllowNewGameFallback then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_NEWGAME_DISABLED reason=%s", tostring(reason)))
+        log("Warn", "Server new-game fallback is disabled. Set ServerAllowNewGameFallback=true only if you accept creating a new host save.")
+        return false
+    end
+
+    return try_call_method_on_class_candidates(
+        "UWEServerLobbyComponent",
+        "StartNewGame",
+        nil,
+        nil,
+        "server-lobby-start-new-game " .. tostring(reason))
+end
+
+local function try_official_host_api_once(reason)
+    serverApiAttempts = serverApiAttempts + 1
+    local maxAttempts = tonumber(config.ServerApiMaxAttempts or 1) or 1
+    if maxAttempts < 1 then maxAttempts = 1 end
+    if serverApiAttempts > maxAttempts then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_SKIPPED reason=%s attempts=%d maxAttempts=%d", tostring(reason), serverApiAttempts, maxAttempts))
+        return false
+    end
+
+    local mode = lower(config.ServerApiMode or "UiLaunchGame")
+    if mode == "officialsmoketestloadgame" or mode == "officialsmoketestlanlisten" or mode == "smoketest" then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_SMOKETEST_MODE reason=%s mode=%s handledBy=launcher", tostring(reason), tostring(config.ServerApiMode)))
+        log("Info", "Server API automation is handled by the game's UWESmoketest command-line path for mode=" .. tostring(config.ServerApiMode))
+        return true
+    end
+
+    if mode == "serverlobbyloadgame" or mode == "loadgame" or mode == "directloadgame" then
+        if try_server_lobby_load_game_once(reason) then
+            return true
+        end
+        return try_server_lobby_new_game_once(reason)
+    end
+
+    if mode == "uilaunchgame" or mode == "ui" or mode == "launchgame" then
+        return try_ui_launch_game_once(reason)
+    end
+
+    if mode ~= "rawhostviewmodel" and mode ~= "raw" then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_SKIPPED reason=%s mode=%s", tostring(reason), tostring(config.ServerApiMode)))
+        log("Warn", "Server API automation skipped because ServerApiMode is not recognized: " .. tostring(config.ServerApiMode))
+        return false
+    end
+
+    if not config.EnableRawHostViewModelApi then
+        append(CAPACITY_TRACE_FILE, string.format("SERVER_API_RAW_DISABLED reason=%s mode=%s", tostring(reason), tostring(config.ServerApiMode)))
+        log("Warn", "Raw host ViewModel API is disabled. This path can create invalid travel URLs if the normal UI state is not initialized.")
+        return false
+    end
+
+    local calls = {
+        {
+            class = "UWEMultiplayerHostedSessionViewModel",
+            method = "TriggerHostGameRequest",
+            label = "host-viewmodel"
+        },
+        {
+            class = "UWEServerLobbyComponent",
+            method = "StartNewGame",
+            label = "server-lobby-component"
+        },
+        {
+            class = "UWELobbyGameMode",
+            method = "StartNewServerGame",
+            label = "lobby-gamemode"
+        }
+    }
+
+    local anyObject = false
+    for _, call in ipairs(calls) do
+        local obj = safe(function() return FindFirstOf(call.class) end, nil)
+        if obj ~= nil then
+            anyObject = true
+            append(CAPACITY_TRACE_FILE, string.format("SERVER_API_OBJECT reason=%s class=%s object=%s", tostring(reason), call.class, object_name(obj)))
+            if try_call_method(obj, call.method, call.label .. " " .. tostring(reason)) then
+                return true
+            end
+        else
+            append(CAPACITY_TRACE_FILE, string.format("SERVER_API_OBJECT_MISSING reason=%s class=%s", tostring(reason), call.class))
+        end
+    end
+
+    if not anyObject then
+        log("Warn", "Server API automation did not find official host objects; navigate to the multiplayer/create-game screen or use the normal UI flow")
+    end
+    return false
+end
+
+local function normalize_listen_url(rawUrl, port)
+    local url = tostring(rawUrl or "")
+    if url == "" then
+        return ""
+    end
+    if not string.find(lower(url), "listen", 1, true) then
+        local sep = "?"
+        if string.find(url, "?", 1, true) then sep = "&" end
+        url = url .. sep .. "listen"
+    end
+    if port ~= nil and port > 0 and not string.find(lower(url), "port=", 1, true) then
+        local sep = "?"
+        if string.find(url, "?", 1, true) then sep = "&" end
+        url = url .. sep .. "Port=" .. tostring(port)
+    end
+    return url
+end
+
+local function setup_experimental_server_automation()
+    log("Info", string.format("Server controls: ServerMode=%s EnableServerAutomation=%s EnableServerApiAutomation=%s ServerApiMode=%s EnableRawHostViewModelApi=%s ServerApiMaxAttempts=%d ServerSaveSlotName=%s EnableUnsafeTravelAutomation=%s EnableDirectConnectAutomation=%s PreferEOSLobby=%s EnableIpPortFallback=%s Port=%d",
+        tostring(config.ServerMode),
+        tostring(config.EnableServerAutomation),
+        tostring(config.EnableServerApiAutomation),
+        tostring(config.ServerApiMode),
+        tostring(config.EnableRawHostViewModelApi),
+        tonumber(config.ServerApiMaxAttempts or 1) or 1,
+        tostring(config.ServerSaveSlotName),
+        tostring(config.EnableUnsafeTravelAutomation),
+        tostring(config.EnableDirectConnectAutomation),
+        tostring(config.PreferEOSLobby),
+        tostring(config.EnableIpPortFallback),
+        tonumber(config.ServerListenPort or 0) or 0))
+
+    if config.EnableServerApiAutomation then
+        local delay = tonumber(config.ServerAutoHostDelayMs or 20000) or 20000
+        if delay < 1000 then delay = 1000 end
+
+        local function schedule_server_api_attempt(nextDelay, label)
+            schedule_game_thread_delay(nextDelay, "experimental-server-api-auto-host", function()
+                local ok = try_official_host_api_once(label)
+                local maxAttempts = tonumber(config.ServerApiMaxAttempts or 1) or 1
+                local retryDelay = tonumber(config.ServerApiRetryIntervalMs or 15000) or 15000
+                if retryDelay < 3000 then retryDelay = 3000 end
+                if not ok and serverApiAttempts < maxAttempts then
+                    schedule_server_api_attempt(retryDelay, "retry+" .. tostring(retryDelay) .. "#" .. tostring(serverApiAttempts + 1))
+                end
+            end)
+        end
+
+        schedule_server_api_attempt(delay, "delay+" .. tostring(delay))
+    end
+
+    if config.EnableServerAutomation and config.EnableUnsafeTravelAutomation then
+        local delay = tonumber(config.ServerAutoHostDelayMs or 20000) or 20000
+        if delay < 1000 then delay = 1000 end
+        local listenUrl = normalize_listen_url(config.ServerTravelUrl, config.ServerListenPort)
+        if listenUrl == "" then
+            log("Warn", "EnableServerAutomation=true but ServerTravelUrl is empty; script launch flags will be used only")
+        else
+            schedule_game_thread_delay(delay, "experimental-server-auto-host", function()
+                exec_console_command("servertravel " .. listenUrl, "experimental server servertravel")
+                exec_console_command("open " .. listenUrl, "experimental server open fallback")
+            end)
+        end
+    elseif config.EnableServerAutomation and not config.EnableUnsafeTravelAutomation then
+        log("Warn", "Unsafe travel automation is disabled; refusing to run servertravel/open. Use EnableServerApiAutomation for the official UWE/Sonar API path.")
+    end
+
+    if config.EnableDirectConnectAutomation then
+        local target = tostring(config.DirectConnectAddress or "")
+        if target == "" then
+            log("Warn", "EnableDirectConnectAutomation=true but DirectConnectAddress is empty")
+        else
+            local delay = tonumber(config.DirectConnectDelayMs or 15000) or 15000
+            if delay < 1000 then delay = 1000 end
+            schedule_game_thread_delay(delay, "experimental-direct-connect", function()
+                exec_console_command("open " .. target, "experimental direct connect")
+            end)
+        end
+    end
+end
+
     log("Info", string.format("Loaded version=%s MaxPlayers=%d lobby=%s session=%s join=%s",
     MOD_VERSION,
     config.MaxPlayers,
@@ -1797,6 +2160,7 @@ log("Info", string.format("Targeted UI patch controls: EnableTargetedUIPatch=%s 
 
 log_game_hash()
 load_native_patch()
+setup_experimental_server_automation()
 register_hooks()
 schedule_game_thread_delay(15000, "join-hook-retry-15s", function()
     retry_join_hooks("startup+15s")

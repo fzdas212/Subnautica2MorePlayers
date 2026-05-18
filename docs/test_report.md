@@ -289,3 +289,61 @@ Not verified:
 - Whether only the host can install the mod.
 
 Until real-client validation passes, do not claim this is a fully verified production mod.
+
+## Server Console Validation - 2026-05-18
+
+Current service/server goal:
+
+- Provide a graphical CMD-window host route.
+- Use shipped in-game APIs where possible.
+- Do not claim a dedicated/headless server unless separately proven.
+
+Build/install verification before launch:
+
+- PowerShell syntax validation passed for the server/client helper scripts.
+- JSON parsing passed for project and dist config files.
+- `.\build.ps1` passed.
+- `.\install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"` passed.
+- `.\tools\verify_install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"` passed.
+- Shipping EXE SHA256 remained:
+  `E9D32E1693BEDBD4CB6BA6D7DB5FF9BB6EE34FA36AEF73F154B3CDC6B64D2CF4`
+
+Validated command:
+
+```powershell
+.\tools\Start-ExperimentalServer.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2" -Windowed -ServerApiMode OfficialSmokeTestLanListen -Monitor -MonitorSeconds 300 -Restart
+```
+
+Validated evidence:
+
+- Game launched through Steam.
+- Mod loaded as `0.3.9-64-official-smoketest-server-console`.
+- `UWESmoketest` started with `smoketest-moreplayers8-server.json`.
+- Game executed:
+  `open L_Main?listen?bIsLanMatch`.
+- Game browsed to:
+  `/Game/Maps/Main/L_Main?listen?bIsLanMatch`.
+- `GameNetDriver` initialized with `UWEReplicationGraph`.
+- UDP socket was created on:
+  `0.0.0.0:7777`.
+- Log reported:
+  `IpNetDriver listening on port 7777`.
+- `CheckLevel` succeeded for `L_Main`.
+- Game was still running at the end of the 300-second monitor.
+- No new crash dump was detected.
+- No `PreLogin failure: Server full` appeared during this local listen-host validation.
+
+Not validated in this section:
+
+- A real second machine joining through `Join-ExperimentalServer.cmd`.
+- Any 5+ player test through the IP:Port listen-host route.
+- World sync, save, rejoin, or long-session stability through the server-console route.
+- True dedicated/headless operation.
+
+Client helper update:
+
+- `tools\Join-ExperimentalServer.ps1` now defaults to launching through Steam.
+- It generates `smoketest-moreplayers8-client.json`.
+- The client smoketest executes:
+  `open <host>:7777`.
+- Direct shipping-EXE launch remains available only through `-UseShippingExe` for debugging.

@@ -11,6 +11,7 @@ $modTarget = Join-Path $shippingDir "ue4ss\Mods\$modName"
 $modsTxt = Join-Path $shippingDir "ue4ss\Mods\mods.txt"
 $manifestPath = Join-Path $modTarget "install_manifest.json"
 $localGameIni = Join-Path $env:LOCALAPPDATA "Subnautica2\Saved\Config\Windows\Game.ini"
+$smoketestDir = Join-Path $GameRoot "Subnautica2\Content\Smoketest"
 
 function Remove-GameIniMarkerBlock {
     param([string]$Path)
@@ -62,6 +63,9 @@ if (Test-Path -LiteralPath $modsTxt) {
 if (Test-Path -LiteralPath $modTarget) {
     Remove-Item -LiteralPath $modTarget -Recurse -Force
 }
+
+Get-ChildItem -LiteralPath $smoketestDir -Filter "smoketest-moreplayers8-*.json" -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force
 
 if ($RemoveUE4SSIfNoOtherMods) {
     $modsDir = Join-Path $shippingDir "ue4ss\Mods"

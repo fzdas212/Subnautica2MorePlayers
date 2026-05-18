@@ -292,3 +292,56 @@ Next highest-value work is real multi-client validation:
 - Test the fifth client specifically and confirm whether `PreLogin failure: Server full.` disappears.
 - If the fifth client is rejected with a different reason, hook that next rejection path.
 - If the fifth client joins but world sync fails, move investigation to `PlayerController`, `PlayerState`, pawn spawn, save metadata, relevancy, bandwidth, and NetDriver limits.
+
+## 2026-05-18 Server Console Discovery
+
+Shipped game assets include official smoketest flows under:
+
+```text
+D:\SteamLibrary\steamapps\common\Subnautica2\Subnautica2\Content\Smoketest
+```
+
+Relevant files:
+
+- `smoketest-listenserver-host.json`
+- `smoketest-listenserver-client.json`
+
+The shipped host smoketest uses:
+
+```text
+open L_Main?listen?bIsLanMatch
+```
+
+The shipped client smoketest uses:
+
+```text
+open 127.0.0.1
+```
+
+This indicates the game already has an internal QA path for LAN listen-host validation. The current server-console implementation reuses that game-owned path instead of broad Lua UObject construction watchers or direct calls to nonexistent `UWEServerLobbyComponent` instances at main-menu time.
+
+Generated host file:
+
+```text
+Subnautica2\Content\Smoketest\smoketest-moreplayers8-server.json
+```
+
+Generated client file:
+
+```text
+Subnautica2\Content\Smoketest\smoketest-moreplayers8-client.json
+```
+
+Local validation proved:
+
+- `UWESmoketest` starts from command line.
+- `open L_Main?listen?bIsLanMatch` reaches `/Game/Maps/Main/L_Main`.
+- `GameNetDriver` is initialized.
+- UDP `0.0.0.0:7777` is opened by the game process.
+- `CheckLevel` succeeds for `L_Main`.
+
+Interpretation:
+
+- This is a valid graphical listen-host route.
+- It is not a true headless/dedicated server.
+- It likely does not create a normal EOS friend-code lobby, so IP:Port client validation is the next target for this route.

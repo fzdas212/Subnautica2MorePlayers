@@ -551,3 +551,545 @@ It records:
 - logs to check
 - next test plan
 - risks and debugging cautions
+
+## 2026-05-18 - Experimental server framework added
+
+User requested exploring a server-side mod direction:
+
+- Prefer de-graphical/low-graphics game startup for hosting.
+- If graphical-less hosting cannot work, explore IP:Port join fallback.
+- Do not bypass Steam/EOS authentication.
+
+Implemented as an experiment harness, not a validated dedicated server:
+
+- Added `MorePlayers8.Server.example.json`.
+- Added root launch wrappers:
+  - `Start-ExperimentalServer.cmd`
+  - `Join-ExperimentalServer.cmd`
+- Added tools:
+  - `tools\Start-ExperimentalServer.ps1`
+  - `tools\Join-ExperimentalServer.ps1`
+  - `tools\New-MorePlayers8FirewallRule.ps1`
+- Added `docs\server_mod_plan.md`.
+- Added default-off config keys to `MorePlayers8.json` and dist config:
+  - `ServerMode`
+  - `EnableServerAutomation`
+  - `ServerListenPort`
+  - `ServerTravelUrl`
+  - `ServerAutoHostDelayMs`
+  - `EnableDirectConnectAutomation`
+  - `DirectConnectAddress`
+  - `DirectConnectDelayMs`
+  - `PreferEOSLobby`
+  - `EnableIpPortFallback`
+- Added Lua support for default-off server/direct automation:
+  - logs server controls on startup
+  - if `EnableServerAutomation=true` and `ServerTravelUrl` is set, schedules `servertravel <url>` and `open <url>` fallback
+  - if `EnableDirectConnectAutomation=true`, schedules `open <DirectConnectAddress>`
+  - records commands in `capacity_trace.txt`
+
+Validation completed:
+
+- PowerShell syntax parse passed for new scripts.
+- JSON parse passed for root/dist/server example configs.
+- `build.ps1` completed successfully.
+- New native DLL SHA256:
+  `ECDF449F75EF023376C97CBD0AFC466C2C8960E4EF2C3B1CADB69638747571F8`
+
+Default behavior:
+
+- `Start-ExperimentalServer.ps1` still prefers EOS lobby/session flow.
+- `-IpPortFallback` only marks that IP:Port fallback is being tested; it does not disable platform authentication.
+
+Not validated:
+
+- Actual game launch through `Start-ExperimentalServer.ps1`.
+- `-nullrhi`.
+- `GameNetDriver` listen socket.
+- Direct `open IP:Port` join.
+- Any true headless/dedicated server behavior.
+
+## 2026-05-18 - Experimental server validation pass started
+
+Current user request: continue until validation is complete, and keep the project files updated so another engineer can resume without chat history.
+
+Scope of this pass:
+
+- Validate the already-added experimental server/client scripts.
+- Re-run build, install, and install verification from the active GitHub working tree.
+- Launch the game through `tools\Start-ExperimentalServer.ps1` in low-graphics mode and inspect whether UE4SS/mod logs are produced.
+- Check for any evidence of a real `GameNetDriver` listen socket or UDP 7777 binding.
+- Try `-NullRHI` only after the low-graphics launch path has evidence.
+
+Important boundary:
+
+- This local machine can verify launch/config/log/port behavior.
+- It cannot by itself prove 64 real remote clients, 64-player world sync, or a production headless server unless logs and real clients demonstrate those facts.
+
+## 2026-05-18 - Build/install validation for server pass
+
+Completed:
+
+- PowerShell syntax parse passed for:
+  - `tools\Start-ExperimentalServer.ps1`
+  - `tools\Join-ExperimentalServer.ps1`
+  - `tools\New-MorePlayers8FirewallRule.ps1`
+  - `Package-Release.ps1`
+  - `install.ps1`
+  - `uninstall.ps1`
+  - `build.ps1`
+- JSON parse passed for:
+  - `MorePlayers8.json`
+  - `MorePlayers8.Server.example.json`
+  - `dist\Subnautica2MorePlayers8\MorePlayers8.json`
+  - `dist\Subnautica2MorePlayers8\build_manifest.json`
+- `.\build.ps1` passed.
+- `.\install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"` passed.
+- `.\tools\verify_install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"` passed all checks.
+- Shipping EXE SHA256 remains:
+  `E9D32E1693BEDBD4CB6BA6D7DB5FF9BB6EE34FA36AEF73F154B3CDC6B64D2CF4`
+- Rebuilt dist native DLL SHA256:
+  `EDA562ADD523706CD5795FECA626233BB99C825EC2C1D53E7633BC9278780E51`
+
+Next step:
+
+- Launch through `tools\Start-ExperimentalServer.ps1 -Windowed -NoSound -Restart`, then inspect process/log/UDP evidence.
+
+## 2026-05-18 - Low-graphics experimental launch result
+
+Command run:
+
+```powershell
+.\tools\Start-ExperimentalServer.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2" -Port 7777 -MaxPlayers 64 -Windowed -NoSound -Restart
+```
+
+Observed:
+
+- Game wrapper and shipping process started.
+- UE4SS/mod loaded.
+- `MorePlayers8.log` reports:
+  - `Loaded version=0.3.6-64-production MaxPlayers=64`
+  - `ServerMode=ExperimentalListenHost`
+  - `EnableServerAutomation=false`
+  - `PreferEOSLobby=true`
+  - `Port=7777`
+- Native patch loaded and is active:
+  - `unrealServerFullAdmission=true`
+  - `lobbyCreate=true`
+  - `lobbySetMax=true`
+  - `sessionCreateModification=true`
+  - `sessionSetMax=true`
+- Game log command line includes `-Port=7777`.
+- Game log loaded client lobby only:
+  - `Browse: /Game/Maps/L_ClientLobby?Name=Player`
+  - `Game class is 'BP_ClientLobbyGameMode_C'`
+- EOS platform config says `IsServer=false`.
+- No `Get-NetUDPEndpoint -LocalPort 7777` result.
+- No `netstat -ano -p udp` entry for `:7777`.
+- No host-side `GameNetDriver` listen/accept evidence.
+
+Conclusion:
+
+- Low-graphics launch validates game/mod startup through the new script.
+- It does not validate a listen server or dedicated/headless server.
+- At this point the script starts an ordinary client lobby with server-oriented config, not an actual server world.
+
+Next step:
+
+- Test `-NullRHI -NoSound` startup and compare whether UE4SS/mod still load and whether any listen evidence appears.
+
+## 2026-05-18 - NullRHI experimental launch result
+
+Command run:
+
+```powershell
+.\tools\Start-ExperimentalServer.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2" -Port 7777 -MaxPlayers 64 -NullRHI -NoSound -Restart
+```
+
+Observed:
+
+- Game wrapper and shipping process started and stayed alive for the observation window.
+- UE4SS/mod loaded.
+- `MorePlayers8.log` reports:
+  - `Loaded version=0.3.6-64-production MaxPlayers=64`
+  - `ServerMode=ExperimentalListenHost`
+  - `EnableServerAutomation=false`
+  - `Port=7777`
+- Native patch loaded and reports `unrealServerFullAdmission=true` and EOS capacity hooks active.
+- Game log command line includes `-nullrhi -nosound -Port=7777`.
+- Game log still reports EOS platform `IsServer=false`.
+- Game log loaded client lobby only:
+  - `Browse: /Game/Maps/L_ClientLobby?Name=Player`
+  - `Game class is 'BP_ClientLobbyGameMode_C'`
+- No UDP 7777 endpoint was found.
+- No `GameNetDriver` listen/accept evidence was found.
+
+Conclusion:
+
+- `-NullRHI` does not crash immediately and does not prevent mod load on this machine.
+- It still does not produce a verified server/listen world by itself.
+
+Next step:
+
+- Search packaged game strings/logs for map/travel candidates, then try an explicit `?listen` travel URL.
+
+## 2026-05-18 - Unsafe travel route rejected and replaced by API route
+
+User reported the explicit `?listen` experiment crashed. This route is now considered unsafe for the server-mod direction.
+
+Evidence from the unsafe route:
+
+- `capacity_trace.txt` shows Lua attempted:
+  - `servertravel /Game/Maps/L_ClientLobby?listen&Port=7777`
+  - `open /Game/Maps/L_ClientLobby?listen&Port=7777`
+- `MorePlayers8.log` shows both Engine and PlayerController console execution returned `false`.
+- Game did not create a UDP 7777 listener.
+
+Code changes made:
+
+- Added `EnableServerApiAutomation`.
+- Added `EnableUnsafeTravelAutomation`, default `false`.
+- `Start-ExperimentalServer.ps1` no longer passes `TravelUrl` on the command line unless `-EnableUnsafeTravelAutomation` is explicitly set.
+- Lua now refuses `servertravel/open` automation unless `EnableUnsafeTravelAutomation=true`.
+- Lua now has a safer official API route that attempts game-owned UWE/Sonar calls:
+  - `UWEMultiplayerHostedSessionViewModel:TriggerHostGameRequest`
+  - `UWEServerLobbyComponent:StartNewGame`
+  - `UWELobbyGameMode:StartNewServerGame`
+
+Validation after code change:
+
+- PowerShell syntax parse passed.
+- JSON parse passed.
+- `.\build.ps1` passed.
+- `.\install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"` passed.
+- `.\tools\verify_install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"` passed.
+- Rebuilt native DLL SHA256:
+  `CD5A624B27211D88B6E09F7714E0B4506A1A400D90819446C43AC7AF26C2D03F`
+
+## 2026-05-18 - Graphical official API host attempt result
+
+Command run:
+
+```powershell
+.\tools\Start-ExperimentalServer.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2" -Port 7777 -MaxPlayers 64 -Windowed -NoSound -EnableApiAutoHost -Restart
+```
+
+Observed:
+
+- Game process stayed alive during the observation window.
+- No new crash directory was created.
+- No raw `TravelUrl` was passed on the command line.
+- Lua `EnableServerApiAutomation=true` triggered official UWE/Sonar host API attempts.
+- Host hook evidence:
+  - `/Script/UWESonar.UWEMultiplayerHostedSessionViewModel:TriggerHostGameRequest` fired.
+- Native EOS evidence:
+  - `EOS_Lobby_CreateLobby ... beforeMaxLobbyMembers=4 afterMaxLobbyMembers=64 ... changed=true`
+  - `EOS_Lobby_CreateLobby callback result=0`
+- This proves the API automation reached the official lobby creation layer.
+
+New blocker:
+
+- Game log reports:
+  - `CanServerTravel: FURL L_Main?listen?game=EGameModeAliasAsEnum::Survival blocked, contains : or \`
+- No UDP 7777 listener was found.
+- No `GameNetDriver` listen/accept evidence was found.
+
+Interpretation:
+
+- The graphical API route is safer and reaches the official EOS lobby path.
+- It still does not complete server/world travel.
+- The likely cause is that the ViewModel is being triggered before the normal create-game UI has initialized all fields, causing the game to generate an invalid `game=` URL value from the enum name `EGameModeAliasAsEnum::Survival`.
+
+Next step:
+
+- Locate the create-game/ViewModel initialization fields or methods that the normal UI sets before `TriggerHostGameRequest`.
+- Avoid repeated auto-host attempts once a lobby creation starts.
+- If the required fields cannot be safely initialized without UI state, document the current mode as semi-automatic: script launches a low-graphics graphical host, but the user must create the lobby through the normal UI.
+
+## 2026-05-18 - Crash and graphical server console hardening
+
+User reported a crash and requested a fully graphical CMD-window server using in-game APIs.
+
+Crash analysis:
+
+- Latest crash directory inspected:
+  `%LOCALAPPDATA%\Subnautica2\Saved\Crashes\UECC-Windows-E68FA0FF4A9BE096C6DA3790B50493C4_0000`
+- `CrashContext.runtime-xml` reports:
+  - `EXCEPTION_ACCESS_VIOLATION reading address 0x0000000000000018`
+  - stack is inside UE4SS Lua UObject member access
+  - trigger chain includes `RegisterStaticConstructObjectPostCallback`
+- Conclusion:
+  - crash is consistent with unsafe UObject access during object construction callbacks;
+  - not an EOS/Steam authentication failure;
+  - not proof that 64-player lobby patch is broken;
+  - keep `EnableUnsafeObjectReflection=false` and `EnableObjectWatchers=false` in production.
+
+Server automation changes made:
+
+- Added safer config keys:
+  - `ServerApiMode`
+  - `EnableRawHostViewModelApi`
+  - `ServerApiMaxAttempts`
+- Default API automation now uses `ServerApiMode=UiLaunchGame`, which looks for `WBP_LoadGamePanel1_C` / `WBP_LoadGamePanel_C` and calls `LaunchGame`.
+- Raw `UWEMultiplayerHostedSessionViewModel:TriggerHostGameRequest` automation is now behind `ServerApiMode=RawHostViewModel` plus `EnableRawHostViewModelApi=true`.
+- API auto-host now attempts only once by default to avoid repeated EOS lobby creation and repeated invalid travel failures.
+- Added `Start-GraphicalServerConsole.cmd`.
+- Added `-Monitor` mode to `tools\Start-ExperimentalServer.ps1` to print live evidence:
+  - game running
+  - EOS lobby capacity
+  - EOS callback success
+  - travel success
+  - invalid travel
+  - UDP port
+  - NetDriver/PostLogin evidence
+  - recent crash evidence
+
+Important boundary:
+
+- This is still not a verified headless/dedicated server.
+- It is a graphical low-resource host console around the official client and official UI/session path.
+- If the UI save panel is not present or no save is selected, `UiLaunchGame` will refuse/skip instead of forcing the broken raw ViewModel path.
+
+Validation note:
+
+- A 45-second launch using the old direct shipping-exe path exited normally during startup:
+  - no new crash directory;
+  - no UE4SS/mod load in the new log;
+  - game log ended with `EngineExit()`.
+- A follow-up wrapper launch also exited early. Game log shows:
+  - `STEAM: Game restarting within Steam client, exiting`
+  - `SteamAPI failed to initialize`
+  - `EOS API failed to initialize`
+- `tools\Start-ExperimentalServer.ps1` was changed to launch through Steam by default:
+  `steam.exe -applaunch 1962700 ...`
+- `-UseWrapperExe` and `-UseShippingExe` remain available only for debugging.
+
+## 2026-05-18 - WER dump analysis and graphical console change
+
+User reported another crash while testing the graphical server direction.
+
+New dump inspected:
+
+- `C:\Users\fzc\AppData\Local\CrashDumps\Subnautica2-Win64-Shipping.exe.10848.dmp`
+- Time: `2026-05-18 19:30:39`
+- No matching new UE crash folder exists under `%LOCALAPPDATA%\Subnautica2\Saved\Crashes`.
+
+Minidump findings:
+
+- Exception thread RIP: `fmodstudio.dll + 0x9031e`.
+- Game log reaches `L_ClientLobby` and `Engine is initialized` at about `19:30:29`.
+- Crash occurs about 10 seconds after frontend load, before the default API automation delay of 20 seconds.
+- This dump does not support blaming `UiLaunchGame` or raw host ViewModel API automation.
+- The active crash address is FMOD Studio, so the low-resource `-NoSound` startup flag is now treated as suspicious for this build.
+
+Changes made:
+
+- `Start-GraphicalServerConsole.cmd` no longer passes `-NoSound` by default.
+- `tools\Start-ExperimentalServer.ps1 -Monitor` now checks both UE crash folders and WER dumps under `%LOCALAPPDATA%\CrashDumps`.
+- Added `docs\crash_dump_analysis.md`.
+
+Current service-mode status:
+
+- Still not verified as a headless/dedicated server.
+- Still no proven `ProcessServerTravel` into `L_Main` from the automated service flow.
+- Still no UDP `7777` / `GameNetDriver` listen evidence in the service-mode flow.
+- Next validation must launch through Steam without `-NoSound`, wait past the API auto-host delay, then inspect EOS lobby, travel, NetDriver, and WER crash evidence.
+
+## 2026-05-18 - Direct server lobby API route added
+
+Current user request: after a crash, stop relying on unsafe travel or raw ViewModel calls and call the game's own API from a graphical CMD-window server console.
+
+New discovery from shipping EXE strings:
+
+- `UWEServerLobbyComponent.cpp` contains a server load path.
+- Relevant native strings:
+  - `Server travel to level %s with options %s`
+  - `Savegame slot %s not found`
+  - `?LaunchType=LoadGame?SaveSlotName=%s`
+- This is more direct than `WBP_LoadGamePanel1_C:LaunchGame("")` and avoids the bad raw ViewModel URL:
+  `L_Main?listen?game=EGameModeAliasAsEnum::Survival`.
+
+Code changes now in progress:
+
+- Lua version bumped to `0.3.7-64-server-lobby-loadgame`.
+- Added `ServerApiMode=ServerLobbyLoadGame`.
+- Added config keys:
+  - `ServerSaveSlotName`
+  - `ServerAllowNewGameFallback`
+- `Start-ExperimentalServer.ps1` now auto-detects the newest local `savegame_*.sav` and writes its base name, for example `savegame_1`, into `ServerSaveSlotName`.
+- `Start-GraphicalServerConsole.cmd` now defaults to:
+  `UWEServerLobbyComponent:LoadGame(ServerSaveSlotName)`.
+- New-game fallback is deliberately disabled by default to avoid creating or overwriting saves during automation.
+
+Validation boundary:
+
+- This still must be built, installed, launched, and monitored.
+- Success requires game log evidence of server load/travel into `L_Main`, EOS lobby success, and eventually `GameNetDriver` or `PostLogin`.
+- Until those appear, this remains an experimental graphical host console, not a proven dedicated/headless server.
+
+## 2026-05-18 - First ServerLobbyLoadGame validation failed but did not crash
+
+Validation command:
+
+```powershell
+.\tools\Start-ExperimentalServer.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2" -Windowed -EnableApiAutoHost -ServerApiMode ServerLobbyLoadGame -ServerApiMaxAttempts 1 -Monitor -Restart
+```
+
+Observed:
+
+- Game launched through Steam and stayed running for 180 seconds.
+- No recent crash dump was detected.
+- Mod loaded as `0.3.7-64-server-lobby-loadgame`.
+- Launcher auto-detected `ServerSaveSlotName=savegame_1`.
+- Lua attempted:
+  `UWEServerLobbyComponent:LoadGame("savegame_1")`.
+- The first component returned by UE4SS was a nullptr wrapper:
+  `Tried calling a member function but the UObject instance is nullptr`.
+- No EOS lobby creation, `L_Main` travel, UDP 7777, or NetDriver evidence appeared.
+
+Code adjustment after this failure:
+
+- Lua version bumped to `0.3.8-64-server-lobby-loadgame-retry`.
+- `ServerLobbyLoadGame` now enumerates all `UWEServerLobbyComponent` candidates with `FindAllOf` plus `FindFirstOf` instead of trusting the first wrapper.
+- Each candidate is attempted and logged.
+- Added `ServerApiRetryIntervalMs`.
+- Default graphical console now tries up to 8 times with 15 second intervals.
+
+This remains unfinished until a retry run proves a callable component and real travel/listen evidence.
+
+## 2026-05-18 - Switch server console to built-in UWESmoketest path
+
+User reported a crash and requested a graphical CMD-window server that calls game APIs directly.
+
+New evidence:
+
+- The game ships official smoketest files under `Subnautica2\Content\Smoketest`.
+- `smoketest-listenserver-host.json` uses the official QA listen-host path:
+  `open L_Main?listen?bIsLanMatch`
+- Shipping EXE strings show `UWESmoketest` supports server-specific actions:
+  - `ServerLobbyLoadGame`
+  - `ServerLobbyStartNewGame`
+  - `CheckConnected`
+  - `CheckLevel`
+
+Implementation change:
+
+- `tools\Start-ExperimentalServer.ps1` now supports:
+  - `OfficialSmokeTestLoadGame`
+  - `OfficialSmokeTestLanListen`
+- `Start-GraphicalServerConsole.cmd` now defaults to `OfficialSmokeTestLanListen`.
+- The launcher writes a temporary game smoketest file:
+  `Subnautica2\Content\Smoketest\smoketest-moreplayers8-server.json`
+- Lua version is now `0.3.9-64-official-smoketest-server-console`.
+- Lua does not try to call `UWEServerLobbyComponent` when the selected mode is handled by command-line smoketest.
+
+Why:
+
+- Direct Lua `UWEServerLobbyComponent:LoadGame(savegame_1)` kept failing because no callable component instance exists at main-menu automation time.
+- The smoketest subsystem runs after the game world/player controller exists and is part of the shipped game, so it is a better API layer for a graphical CMD-controlled server.
+
+Still unverified:
+
+- `OfficialSmokeTestLanListen` has not yet been fully validated in this run.
+- IP/port client join has not yet been validated.
+- 5+ player sync through the CMD server console has not yet been validated.
+
+## 2026-05-18 - Continue validation after crash report
+
+Current user request:
+
+- Treat the previous crash as unresolved.
+- Build a graphical CMD-window server route that calls shipped in-game APIs.
+- Continue until validation is complete, without claiming a true dedicated/headless server unless the evidence proves it.
+
+Current route under validation:
+
+- `Start-GraphicalServerConsole.cmd`
+- `tools\Start-ExperimentalServer.ps1`
+- `ServerApiMode=OfficialSmokeTestLanListen`
+- Shipped game subsystem: `UWESmoketest`
+- Generated smoketest file:
+  `D:\SteamLibrary\steamapps\common\Subnautica2\Subnautica2\Content\Smoketest\smoketest-moreplayers8-server.json`
+- Expected in-game action:
+  `open L_Main?listen?bIsLanMatch`
+
+Immediate checks:
+
+- Re-run PowerShell syntax validation.
+- Re-run `build.ps1`, `install.ps1`, and `tools\verify_install.ps1`.
+- Launch with `-Monitor -MonitorSeconds 300 -Restart`.
+- Required minimum evidence:
+  - game still running at monitor end;
+  - `UWESmoketest` starts;
+  - `L_Main` is loaded;
+  - UDP `7777` is open;
+  - `GameNetDriver` listen evidence appears;
+  - no new UE/WER crash dump;
+  - no `FPlatformMisc::RequestExit(0)` caused by smoketest completion.
+
+## 2026-05-18 - OfficialSmokeTestLanListen 300-second validation passed
+
+Validation command:
+
+```powershell
+cd C:\tmp\Subnautica2MorePlayers-github
+.\tools\Start-ExperimentalServer.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2" -Windowed -ServerApiMode OfficialSmokeTestLanListen -Monitor -MonitorSeconds 300 -Restart
+```
+
+Observed:
+
+- Game process remained running at the end of the 300-second monitor.
+- Window title:
+  `Subnautica 2 - Build 113109`
+- Process:
+  `Subnautica2-Win64-Shipping.exe`, PID `38792` during this validation.
+- `UWESmoketest` started from:
+  `smoketest-moreplayers8-server.json`
+- The generated smoketest executed:
+  `open L_Main?listen?bIsLanMatch`
+- Game log entered:
+  `/Game/Maps/Main/L_Main?listen?bIsLanMatch`
+- Game log created:
+  `GameNetDriver` using `UWEReplicationGraph`
+- Game log reported:
+  `IpNetDriver listening on port 7777`
+- `Get-NetUDPEndpoint -LocalPort 7777` showed:
+  `0.0.0.0:7777`, owning process `38792`.
+- `CheckLevel` succeeded with:
+  `Level Name is L_Main`.
+- No `PreLogin failure: Server full` was seen in the monitored evidence.
+- No recent UE crash folder or WER dump was detected.
+- No smoketest completion `RequestExit(0)` was observed; the trailing `Wait 86400` kept the listen host alive.
+
+Important boundary:
+
+- This proves a graphical CMD-controlled LAN listen host can be started locally through the shipped game `UWESmoketest` path.
+- This does not prove a true headless/dedicated server.
+- This does not yet prove a real remote client can join through IP:Port, or that 5+ players sync through this server-console route.
+
+Follow-up implemented:
+
+- `tools\Join-ExperimentalServer.ps1` now launches through Steam by default instead of directly launching the shipping EXE.
+- The client script now writes:
+  `Subnautica2\Content\Smoketest\smoketest-moreplayers8-client.json`
+- The generated client smoketest executes:
+  `open <host>:7777`
+- Lua direct-connect automation is disabled for that client path to avoid a duplicate second `open` while `UWESmoketest` is already connecting.
+
+## 2026-05-18 - Package refreshed after server-console validation
+
+Completed:
+
+- Rebuilt with `.\build.ps1`.
+- Reinstalled with:
+  `.\install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"`.
+- Re-ran:
+  `.\tools\verify_install.ps1 -GameRoot "D:\SteamLibrary\steamapps\common\Subnautica2"`.
+- Install verification passed all checks.
+- Refreshed uncompressed package:
+  `Z:\Subnautica2MorePlayers8`.
+- Verified the Z package `README.md` contains the current Chinese server-console status.
+- Verified the Z package client script uses Steam `-applaunch 1962700` and generates `smoketest-moreplayers8-client.json`.
+- Created desktop zip:
+  `C:\Users\fzc\Desktop\Subnautica2MorePlayers8-v0.3.9-64-server-console.zip`
+- Desktop zip hash is intentionally reported in the final assistant response instead of embedded here, because embedding the hash changes the archive content.

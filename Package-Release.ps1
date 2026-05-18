@@ -1,6 +1,6 @@
 ﻿param(
     [string]$ProjectRoot = $PSScriptRoot,
-    [string]$Version = "0.3.6-64-production"
+    [string]$Version = "0.3.9-64-official-smoketest-server-console"
 )
 
 $ErrorActionPreference = "Stop"
@@ -36,8 +36,12 @@ foreach ($file in @(
     "Uninstall-OneClick.ps1",
     "Collect-MorePlayers8Logs.cmd",
     "Collect-MorePlayers8Logs.ps1",
+    "Start-ExperimentalServer.cmd",
+    "Start-GraphicalServerConsole.cmd",
+    "Join-ExperimentalServer.cmd",
     "install.ps1",
     "uninstall.ps1",
+    "MorePlayers8.Server.example.json",
     "README.md",
     "INSTALL.zh-CN.md",
     "安装说明.md"
@@ -55,12 +59,12 @@ Copy-Item -LiteralPath (Join-Path $modDist "scripts\main.lua") -Destination (Joi
 Copy-Item -LiteralPath (Join-Path $modDist "native\MorePlayers8Native.dll") -Destination (Join-Path $distTarget "native\MorePlayers8Native.dll") -Force
 
 New-Item -ItemType Directory -Force -Path (Join-Path $packageDir "tools") | Out-Null
-foreach ($file in @("detect_game.ps1", "verify_install.ps1")) {
+foreach ($file in @("detect_game.ps1", "verify_install.ps1", "Start-ExperimentalServer.ps1", "Join-ExperimentalServer.ps1", "New-MorePlayers8FirewallRule.ps1")) {
     Copy-Item -LiteralPath (Join-Path $ProjectRoot "tools\$file") -Destination (Join-Path $packageDir "tools\$file") -Force
 }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $packageDir "docs") | Out-Null
-foreach ($file in @("discovery_report.md", "test_report.md", "current_progress.md", "latest_test_instructions_zh-CN.md")) {
+foreach ($file in @("discovery_report.md", "test_report.md", "current_progress.md", "latest_test_instructions_zh-CN.md", "server_mod_plan.md", "server_console_status_zh.md", "crash_dump_analysis.md", "handoff.md")) {
     $docPath = Join-Path $ProjectRoot "docs\$file"
     if (Test-Path -LiteralPath $docPath) {
         Copy-Item -LiteralPath $docPath -Destination (Join-Path $packageDir "docs\$file") -Force
